@@ -1,0 +1,6 @@
+# macOS desktop app dependencies (in addition to the core requirements).
+-r ../requirements.txt
+flask>=3.0
+pywebview>=4.4
+# Only needed to build a standalone .app bundle:
+# py2app>=0.28

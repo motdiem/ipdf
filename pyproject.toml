@@ -30,12 +30,13 @@ ipdf = "ipdf.cli:main"
 
 [project.optional-dependencies]
 web = ["flask>=3.0"]
+mac = ["flask>=3.0", "pywebview>=4.4"]
 
 [project.urls]
 Homepage = "https://github.com/motdiem/ipdf"
 
 [tool.setuptools.packages.find]
-include = ["ipdf*", "webapp*"]
+include = ["ipdf*", "webapp*", "macapp*"]
 
 [tool.setuptools.package-data]
 webapp = ["templates/*", "static/*"]
