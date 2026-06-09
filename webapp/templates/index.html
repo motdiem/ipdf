@@ -84,9 +84,9 @@
 
   <footer class="footer">Files are converted on the fly and never stored.</footer>
 
-  <script>
-    window.IPDF_CHOICES = {{ choices | tojson }};
-  </script>
+  <!-- Option metadata as inert data (not executed) so the CSP can forbid
+       inline scripts. app.js reads and parses this. -->
+  <script id="ipdf-choices" type="application/json">{{ choices | tojson }}</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

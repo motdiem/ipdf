@@ -118,6 +118,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Document title for PDF metadata (default: first H1 or file name)",
     )
 
+    security = parser.add_argument_group("resource policy (security)")
+    security.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Allow fetching remote http(s) resources referenced by the document "
+        "(off by default; public hosts only, private/loopback IPs are blocked)",
+    )
+    security.add_argument(
+        "--no-local-files",
+        action="store_true",
+        help="Disallow reading local files referenced by the document "
+        "(by default, local files beside the source are allowed)",
+    )
+
     parser.add_argument(
         "-q", "--quiet", action="store_true", help="Suppress non-error output"
     )
@@ -140,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
         theme=args.theme,
         hyphenate=not args.no_hyphens,
         title=args.title,
+        allow_local_files=not args.no_local_files,
+        allow_remote=args.allow_remote,
     )
     if args.page_size is not None:
         options.page_width, options.page_height = args.page_size

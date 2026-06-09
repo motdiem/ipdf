@@ -7,7 +7,12 @@
 # without them the image builds but every conversion fails at runtime.
 ###############################################################################
 
-FROM python:3.11-slim AS runtime
+# Pin to a specific patch tag for reproducibility. For the strongest guarantee,
+# pin by digest instead, e.g.:
+#   FROM python:3.11-slim@sha256:<digest> AS runtime
+# (Single-stage is intentional: only prebuilt wheels are installed, so no
+# compiler/build toolchain is added to the image — the build surface stays out.)
+FROM python:3.11.13-slim AS runtime
 
 # --- Native libraries WeasyPrint links against at runtime, plus fonts. -------
 # These are the #1 gotcha: a pip install of weasyprint does NOT pull them in.
@@ -42,7 +47,7 @@ WORKDIR /app
 # Copy only the requirement spec first so changing app code doesn't bust the
 # (slow) dependency-install layer.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt gunicorn flask
+RUN pip install --no-cache-dir -r requirements.txt "gunicorn>=21,<24" "flask>=3.0,<4"
 
 # --- Application code. Only what the web service needs. -----------------------
 COPY ipdf ./ipdf

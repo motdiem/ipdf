@@ -26,7 +26,7 @@ class WebAppTests(unittest.TestCase):
     def test_index_serves_html(self):
         resp = self.client.get("/")
         self.assertEqual(resp.status_code, 200)
-        self.assertIn(b"IPDF_CHOICES", resp.data)
+        self.assertIn(b'id="ipdf-choices"', resp.data)
 
     def test_options_endpoint(self):
         resp = self.client.get("/api/options")

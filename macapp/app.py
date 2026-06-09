@@ -97,7 +97,11 @@ class Api:
             return {"saved": False, "path": None}
         # Different pywebview versions return a str or a one-element list/tuple.
         target = result if isinstance(result, (str, bytes)) else result[0]
-        saved = write_pdf(target, b64_data)
+        try:
+            saved = write_pdf(target, b64_data)
+        except (ValueError, OSError) as exc:
+            # Malformed base64 from the bridge, or an unwritable path.
+            return {"saved": False, "path": None, "error": str(exc)}
         return {"saved": True, "path": str(saved)}
 
 

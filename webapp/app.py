@@ -14,8 +14,10 @@ Run it with::
 from __future__ import annotations
 
 import io
+import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 # Allow running as a loose script (python webapp/app.py) as well as a module.
@@ -49,6 +51,12 @@ from ipdf.styles import (  # noqa: E402
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 ALLOWED_SUFFIXES = MARKDOWN_SUFFIXES | DOCX_SUFFIXES
+
+# Bound how many CPU/memory-heavy renders run concurrently *in this process* so a
+# burst of requests (or threads) can't pile up and exhaust the worker. This is a
+# per-process backpressure valve, not a substitute for an edge rate-limiter.
+MAX_CONCURRENCY = max(1, int(os.environ.get("IPDF_MAX_CONCURRENCY", "2")))
+_render_slots = threading.BoundedSemaphore(MAX_CONCURRENCY)
 
 # Human-friendly labels for the option pickers in the UI.
 PRESET_LABELS = {
@@ -103,16 +111,29 @@ def api_options():
     return jsonify(_choices())
 
 
-def _float_or_none(value, default=None):
+# Bounds for numeric form fields. Mirrors the core ranges but rejected here as a
+# 400 (client error) rather than a converter exception, so the message is clean.
+_MARGIN_BOUNDS = (0.0, 3.0)
+_FONT_SIZE_BOUNDS = (4.0, 48.0)
+_LINE_HEIGHT_BOUNDS = (0.8, 4.0)
+
+
+def _bounded_float(value, lo, hi, *, default=None):
+    """Parse a finite float within [lo, hi]; abort 400 on anything else."""
     if value is None:
         return default
     value = str(value).strip()
     if value == "":
         return default
     try:
-        return float(value)
+        num = float(value)
     except ValueError:
         abort(400, f"Expected a number, got {value!r}")
+    if num != num or num in (float("inf"), float("-inf")):  # NaN / inf
+        abort(400, f"Expected a finite number, got {value!r}")
+    if not (lo <= num <= hi):
+        abort(400, f"Value {num} out of range [{lo}, {hi}]")
+    return num
 
 
 def _build_options(form) -> RenderOptions:
@@ -124,11 +145,17 @@ def _build_options(form) -> RenderOptions:
     if theme not in THEMES:
         abort(400, f"Unknown theme {theme!r}")
 
+    # The web service only offers the vetted font presets — no literal families,
+    # which keeps any value from reaching the CSS font-family declaration.
     font = (form.get("font") or DEFAULT_FONT).strip()
+    if font not in FONT_STACKS:
+        abort(400, f"Unknown font {font!r}")
 
-    margin = _float_or_none(form.get("margin"), 0.3)
-    line_height = _float_or_none(form.get("line_height"), 1.5)
-    font_size = _float_or_none(form.get("font_size"), None)
+    margin = _bounded_float(form.get("margin"), *_MARGIN_BOUNDS, default=0.3)
+    line_height = _bounded_float(
+        form.get("line_height"), *_LINE_HEIGHT_BOUNDS, default=1.5
+    )
+    font_size = _bounded_float(form.get("font_size"), *_FONT_SIZE_BOUNDS, default=None)
 
     # checkboxes arrive as "true"/"on"/"1" when ticked, absent otherwise.
     hyphenate = str(form.get("hyphenate", "true")).lower() in {"1", "true", "on", "yes"}
@@ -144,6 +171,10 @@ def _build_options(form) -> RenderOptions:
         theme=theme,
         hyphenate=hyphenate,
         title=title,
+        # Untrusted input: never let a document read local files or reach the
+        # network. Only embedded data: URIs are allowed through.
+        allow_local_files=False,
+        allow_remote=False,
     )
 
 
@@ -166,15 +197,21 @@ def convert():
 
     options = _build_options(request.form)
 
-    # Save to a temp file so the converter can detect the format by extension
-    # and resolve any relative assets against its directory.
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src = Path(tmpdir) / safe_name
-        upload.save(src)
-        try:
-            result = render(src, options=options)
-        except ConversionError as exc:
-            abort(400, str(exc))
+    # Backpressure: reject rather than queue when all render slots are busy.
+    if not _render_slots.acquire(blocking=False):
+        abort(503, "Server busy, please retry shortly.")
+    try:
+        # Save to a temp file so the converter can detect the format by extension
+        # and resolve any relative assets against its directory.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = Path(tmpdir) / safe_name
+            upload.save(src)
+            try:
+                result = render(src, options=options)
+            except ConversionError as exc:
+                abort(400, str(exc))
+    finally:
+        _render_slots.release()
 
     download_name = Path(safe_name).with_suffix(".pdf").name
     return send_file(
@@ -196,6 +233,35 @@ def _too_large(err):
     return jsonify(error=f"File too large (limit {limit_mb} MB)."), 413
 
 
+@app.errorhandler(503)
+def _busy(err):
+    return jsonify(error=getattr(err, "description", "Server busy")), 503
+
+
+# A strict CSP the page actually satisfies: no inline scripts (the option
+# metadata is delivered in a non-executed <script type="application/json">
+# block), only same-origin assets, images limited to self + data: URIs.
+_CSP = (
+    "default-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("Content-Security-Policy", _CSP)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
+
+
 def main():
     import argparse
 
@@ -204,6 +270,13 @@ def main():
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
+
+    # The Werkzeug debugger is a remote-code-execution surface; never let it run
+    # on a non-loopback interface.
+    loopback = {"127.0.0.1", "::1", "localhost"}
+    if args.debug and args.host not in loopback:
+        parser.error("--debug may only be used with a loopback --host (127.0.0.1).")
+
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 
