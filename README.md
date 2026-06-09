@@ -137,11 +137,14 @@ docker run --rm -p 8000:8000 ipdf-web
 ```
 
 Tunables via environment variables: `PORT`, `GUNICORN_WORKERS`,
-`GUNICORN_THREADS`, `GUNICORN_TIMEOUT`.
+`GUNICORN_THREADS`, `GUNICORN_TIMEOUT`, `IPDF_MAX_CONCURRENCY`.
 
-> **Before exposing it publicly to untrusted users**, read the security note on
-> WeasyPrint resource fetching (SSRF / local-file read) in
-> [docs/ARCHITECTURE.md §11.3](docs/ARCHITECTURE.md#113-ssrf--local-file-read-via-resource-fetching-security--high).
+The web service is hardened for untrusted input: documents may only embed
+`data:` resources (no local-file or network fetching — SSRF-safe), options are
+strictly validated, DOCX zip-bombs are rejected, a concurrency cap sheds load
+with `503`, and responses carry a strict CSP + security headers. For
+defence-in-depth (edge rate limiting, HTML sanitiser) and the full threat model,
+see [docs/ARCHITECTURE.md §11.3–11.19](docs/ARCHITECTURE.md#113-ssrf--local-file-read-via-resource-fetching-security--mitigated).
 
 ## macOS app
 

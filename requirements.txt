@@ -1,3 +1,6 @@
-weasyprint>=60
-markdown>=3.4
-mammoth>=1.6
+# Upper bounds guard against surprise major-version breakage / unreviewed
+# updates. For production/container images, generate a fully hash-pinned lock
+# (e.g. `pip-compile --generate-hashes`) — see docs/ARCHITECTURE.md.
+weasyprint>=60,<69
+markdown>=3.4,<4
+mammoth>=1.6,<2

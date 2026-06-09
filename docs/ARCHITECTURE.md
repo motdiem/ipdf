@@ -358,28 +358,33 @@ fonts named in the CSS stack. If the image lacks Latin fonts you get tofu
 `fonts-liberation` / `fonts-noto-core`. CJK/RTL/emoji need additional font
 packages — add them if your inputs need them.
 
-### 11.3 SSRF / local-file read via resource fetching (security — HIGH)
-WeasyPrint resolves resources referenced by the document (e.g.
-`<img src="https://internal/...">`, or worst case `src="file:///etc/passwd"`,
-or relative paths against `base_url`). For a **public web deployment** this is a
-server-side request forgery / local file disclosure vector: an attacker uploads
-Markdown that references internal URLs or local files, and the fetched content
-can end up embedded in the returned PDF.
+### 11.3 SSRF / local-file read via resource fetching (security — mitigated)
+WeasyPrint resolves resources referenced by a document (`<img src=…>`, CSS
+`url()`/`@import`, `@font-face`). Left open, a malicious upload referencing
+`file:///etc/passwd` or `http://169.254.169.254/…` would have its content
+fetched into the PDF — a server-side request forgery / local-file disclosure.
 
-Mitigations (in priority order):
-1. **Restrict the fetcher.** Pass a custom `url_fetcher` to `weasyprint.HTML`
-   that allows only `data:` URIs (and, if you want remote images, an explicit
-   https allow-list) and **blocks `file:` and private/link-local IP ranges.**
-   This is the recommended hardening and is currently *documented but not yet
-   implemented* — treat it as the top backlog item before exposing the web
-   service to untrusted users.
-2. Run the container with **egress network policy** denying outbound except what
-   you need (defence in depth; pairs well with the read-only FS already set).
-3. Keep `base_url` pinned to the per-request temp dir (already done) so relative
-   paths can't escape upward — but note this does **not** stop absolute
-   `file://`/`http(s)://` URLs.
+**Now implemented** via a custom `url_fetcher` built in `ipdf/security.py`
+(`build_url_fetcher`) and passed to `HTML(..., url_fetcher=…)` in
+`converter.render()`. Policy:
+- `data:` URIs — always allowed (mammoth inlines DOCX images this way).
+- `file:`/relative — only when `allow_local_files`, and only if the resolved
+  path stays **inside the document's base dir** (no `..`/absolute escapes).
+- `http(s)` — only when `allow_remote`, and only to **publicly routable hosts**
+  (`_host_is_public` blocks loopback/private/link-local/reserved/multicast,
+  incl. the cloud-metadata IP). Residual: DNS-rebinding TOCTOU (we resolve once,
+  WeasyPrint resolves again) — pair with an egress network policy for defence in
+  depth.
+- any other scheme — refused.
 
-For the **CLI/desktop** (local, trusted input) this is a non-issue.
+Per-surface defaults (`RenderOptions.allow_local_files` / `allow_remote`):
+- **Web service** (`webapp/app.py`): both `False` — data-URI-only, fully locked.
+- **CLI/desktop** (trusted): local files on, remote off; `--allow-remote` /
+  `--no-local-files` flags adjust it.
+
+This single gate neutralises the vector regardless of how the URL entered (raw
+HTML, Markdown image, CSS, font literal), which is why raw-HTML passthrough
+(§11.13) is only a documented residual rather than exploitable.
 
 ### 11.4 Upload size limit ↔ 413
 `MAX_CONTENT_LENGTH = 25 MB` in `webapp/app.py`. Exceeding it makes Flask raise
@@ -447,6 +452,55 @@ constraint can occasionally push a heading to the next page leaving slack —
 expected trade-off; don't "fix" it by removing the rule without checking the
 orphaned-heading case.
 
+### 11.13 Raw HTML / `attr_lists` passthrough (residual)
+`python-markdown` passes raw HTML through unsanitised, and `extra`'s
+`attr_lists` can set arbitrary attributes. Because the output is rendered to a
+**PDF** (no JavaScript execution) and the `url_fetcher` (§11.3) blocks resource
+fetches, this is an **accepted residual**, not an exploit. If you ever render
+this HTML in a browser context, or want belt-and-braces, add an HTML sanitiser
+(`nh3`) in `_build_body` — deliberately *not* a runtime dep today.
+
+### 11.14 DOCX zip-bomb guard
+A `.docx` is a zip; the 25 MB upload cap is on the **compressed** bytes, so a
+tiny upload can declare gigabytes. `security.check_archive_safety` inspects the
+central directory (no extraction) and rejects on total uncompressed size, entry
+count, or compression ratio before mammoth runs. Tune the caps
+(`ARCHIVE_MAX_*`) if you legitimately handle very large docs.
+
+### 11.15 Input validation: numeric bounds & font sanitisation
+`margin`/`font_size`/`line_height` are range- and finiteness-checked
+(`_check_range`; `float("nan")`/`inf` are valid floats and must be rejected
+explicitly). A **literal** `font` value flows into `font-family:` and is run
+through `sanitize_font_family` (rejects `;{}()@`, `url(`, `@import`). The web
+service goes further and only accepts the vetted `FONT_STACKS` keys — no literal
+families at all.
+
+### 11.16 Concurrency cap & remaining DoS surface
+Each render is CPU/memory-heavy. `webapp` holds a `BoundedSemaphore`
+(`IPDF_MAX_CONCURRENCY`, default 2) and returns **503** when saturated rather
+than piling work onto a worker. This is per-process backpressure, **not** a rate
+limiter — for abuse protection put a per-IP limiter at the edge (or add
+Flask-Limiter). Pair with gunicorn `--timeout` to kill pathological renders.
+
+### 11.17 Security headers & the inert JSON bootstrap
+`webapp` sends a strict CSP (`default-src 'none'`, no `'unsafe-inline'`) plus
+`nosniff`/`X-Frame-Options`/`Referrer-Policy`. The CSP forbids inline scripts,
+so the option metadata is delivered in a `<script type="application/json"
+id="ipdf-choices">` block (inert data) and parsed by `app.js`. **Gotcha:** if
+you reintroduce an inline `<script>` you must either move it out or loosen the
+CSP — don't reach for `'unsafe-inline'`.
+
+### 11.18 Dependency & base-image pinning
+`requirements.txt`/`pyproject.toml` use bounded ranges (`>=x,<next-major`) and
+the Dockerfile pins a base **patch tag**. For reproducible/production images,
+generate a hash-pinned lock (`pip-compile --generate-hashes`) and pin the base
+by `@sha256:` digest — not automated here (needs network).
+
+### 11.19 Werkzeug debugger guard
+`python -m webapp --debug` enables the interactive debugger (an RCE surface). The
+launcher refuses `--debug` unless `--host` is loopback. The container never uses
+the dev server (gunicorn only), so this only concerns local runs.
+
 ---
 
 ## 12. Testing strategy
@@ -459,6 +513,9 @@ tests/test_webapp.py   Flask test client: routes, PDF response, error JSON
 tests/test_macapp.py   headless desktop logic: write_pdf, free port,
                        embedded server actually serving the UI
                        (auto-skips if deps absent; no GUI required)
+tests/test_security.py url_fetcher allow/deny (file/remote/data/scheme,
+                       private-IP block), font sanitisation, zip-bomb guard,
+                       numeric bounds, SSRF no-leak, web headers/400/503
 ```
 
 Run all: `python -m unittest discover -s tests`. The suites assert on real PDF
@@ -487,8 +544,9 @@ on a Mac.
 
 ## 14. Known limitations / future work
 
-- **Implement the `url_fetcher` hardening (§11.3)** before any untrusted public
-  deployment — top priority.
+- The SSRF/local-file `url_fetcher` hardening (§11.3) is **implemented**.
+  Remaining defence-in-depth: an HTML sanitiser (`nh3`, §11.13) and a per-IP
+  edge rate limiter (§11.16) are intentionally not runtime deps yet.
 - No syntax highlighting in code blocks (Pygments/`codehilite` not wired up).
 - No streaming/async; large docs block a worker for the render duration.
 - Standalone macOS `.app` needs the WeasyPrint dylibs bundled (`brew install

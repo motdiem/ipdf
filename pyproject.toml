@@ -20,17 +20,17 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "weasyprint>=60",
-    "markdown>=3.4",
-    "mammoth>=1.6",
+    "weasyprint>=60,<69",
+    "markdown>=3.4,<4",
+    "mammoth>=1.6,<2",
 ]
 
 [project.scripts]
 ipdf = "ipdf.cli:main"
 
 [project.optional-dependencies]
-web = ["flask>=3.0"]
-mac = ["flask>=3.0", "pywebview>=4.4"]
+web = ["flask>=3.0,<4"]
+mac = ["flask>=3.0,<4", "pywebview>=4.4,<6"]
 
 [project.urls]
 Homepage = "https://github.com/motdiem/ipdf"

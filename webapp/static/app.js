@@ -1,7 +1,19 @@
 (function () {
   "use strict";
 
-  const CHOICES = window.IPDF_CHOICES || {};
+  // Option metadata is delivered as an inert JSON <script> block (keeps the CSP
+  // free of inline-script allowances).
+  function readChoices() {
+    const el = document.getElementById("ipdf-choices");
+    if (!el) return {};
+    try {
+      return JSON.parse(el.textContent || "{}");
+    } catch (_) {
+      return {};
+    }
+  }
+
+  const CHOICES = readChoices();
   const DEFAULTS = CHOICES.defaults || {};
 
   const $ = (sel) => document.querySelector(sel);

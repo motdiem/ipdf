@@ -55,7 +55,7 @@ class EmbeddedServerTests(unittest.TestCase):
             with urllib.request.urlopen(server.url, timeout=5) as resp:
                 self.assertEqual(resp.status, 200)
                 body = resp.read()
-            self.assertIn(b"IPDF_CHOICES", body)
+            self.assertIn(b'id="ipdf-choices"', body)
         finally:
             server.shutdown()
 
