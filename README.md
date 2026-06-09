@@ -122,8 +122,26 @@ Files are converted in memory and never written to disk beyond a short-lived
 temp file during conversion. Uploads are capped at 25 MB.
 
 > The bundled server is Flask's development server — fine for personal/local
-> use. To host it for others, put it behind a production WSGI server, e.g.
-> `gunicorn webapp.app:app`.
+> use. For hosting, use the Docker image below (it runs gunicorn).
+
+### Run the web app with Docker
+
+The image bundles WeasyPrint's native libraries and fonts and serves the app
+with gunicorn (a production WSGI server):
+
+```bash
+docker compose up --build      # → http://localhost:8000
+# or
+docker build -t ipdf-web .
+docker run --rm -p 8000:8000 ipdf-web
+```
+
+Tunables via environment variables: `PORT`, `GUNICORN_WORKERS`,
+`GUNICORN_THREADS`, `GUNICORN_TIMEOUT`.
+
+> **Before exposing it publicly to untrusted users**, read the security note on
+> WeasyPrint resource fetching (SSRF / local-file read) in
+> [docs/ARCHITECTURE.md §11.3](docs/ARCHITECTURE.md#113-ssrf--local-file-read-via-resource-fetching-security--high).
 
 ## macOS app
 
@@ -174,6 +192,11 @@ Word .docx ──(mammoth)────────┘
 - The HTML is wrapped in a stylesheet (`ipdf/styles.py`) whose `@page` size,
   font, margins, and colours are computed from your options, then rendered by
   **WeasyPrint**.
+
+For the full design — component map, the iPhone-readability math, request
+lifecycles, deployment, and a maintainer's list of **gotchas** (native deps,
+the SSRF/local-file security note, worker sizing, fonts, …) — see
+**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Development
 
