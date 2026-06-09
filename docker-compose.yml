@@ -1,0 +1,23 @@
+# Convenience wrapper for local runs:  docker compose up --build
+# Then open http://localhost:8000
+
+services:
+  ipdf-web:
+    build: .
+    image: ipdf-web:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Override any of the tunables baked into the image here.
+      PORT: "8000"
+      GUNICORN_WORKERS: "2"
+      GUNICORN_THREADS: "4"
+      GUNICORN_TIMEOUT: "120"
+    # Hardening: the service writes nothing to disk except short-lived temp
+    # files during conversion, so give it a read-only root + a small tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
