@@ -100,6 +100,31 @@ convert(
 `ipdf.converter.render()` returns the PDF bytes plus the intermediate HTML and
 detected title if you'd rather not write to disk.
 
+## Web frontend
+
+There's also a tiny drag-and-drop web app: drop a Markdown or `.docx` file onto
+the page and the converted PDF downloads automatically. All the conversion
+options live behind a ⚙️ settings panel (iPhone model, theme, font, font size,
+margin, line height, hyphenation, title).
+
+```bash
+pip install ".[web]"        # or: pip install -r webapp/requirements.txt
+python -m webapp            # serves http://127.0.0.1:5000
+```
+
+Options:
+
+```bash
+python -m webapp --host 0.0.0.0 --port 8080   # expose on the network
+```
+
+Files are converted in memory and never written to disk beyond a short-lived
+temp file during conversion. Uploads are capped at 25 MB.
+
+> The bundled server is Flask's development server — fine for personal/local
+> use. To host it for others, put it behind a production WSGI server, e.g.
+> `gunicorn webapp.app:app`.
+
 ## How it works
 
 ```

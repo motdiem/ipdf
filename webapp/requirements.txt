@@ -1,0 +1,3 @@
+# Web frontend dependencies (in addition to the core requirements.txt)
+-r ../requirements.txt
+flask>=3.0

@@ -28,8 +28,14 @@ dependencies = [
 [project.scripts]
 ipdf = "ipdf.cli:main"
 
+[project.optional-dependencies]
+web = ["flask>=3.0"]
+
 [project.urls]
 Homepage = "https://github.com/motdiem/ipdf"
 
 [tool.setuptools.packages.find]
-include = ["ipdf*"]
+include = ["ipdf*", "webapp*"]
+
+[tool.setuptools.package-data]
+webapp = ["templates/*", "static/*"]
