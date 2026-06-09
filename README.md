@@ -125,6 +125,39 @@ temp file during conversion. Uploads are capped at 25 MB.
 > use. To host it for others, put it behind a production WSGI server, e.g.
 > `gunicorn webapp.app:app`.
 
+## macOS app
+
+For a desktop experience there's a native macOS app that reuses the same UI.
+It runs the converter in-process and shows the drag-and-drop page inside a
+native window (WKWebView via [pywebview](https://pywebview.flowrl.com)); dropping
+a file opens a native **Save as…** dialog for the resulting PDF.
+
+```bash
+pip install ".[mac]"        # or: pip install -r macapp/requirements.txt
+python -m macapp            # opens the app window
+```
+
+### Building a double-clickable `ipdf.app`
+
+On a Mac you can bundle it with [py2app](https://py2app.readthedocs.io):
+
+```bash
+pip install -r macapp/requirements.txt py2app
+python macapp/setup_py2app.py py2app
+open dist/ipdf.app
+```
+
+> **Native-library caveat.** WeasyPrint depends on Pango/cairo/GDK-PixBuf.
+> `python -m macapp` works as soon as those are present (`brew install
+> weasyprint` installs them). A fully self-contained `.app` that runs on a Mac
+> *without* Homebrew requires bundling those dylibs into the app — that step is
+> environment-specific and not automated here.
+
+Why pywebview and not Tauri/Electron? The conversion is Python + WeasyPrint, so
+a Rust/JS shell would still have to ship and drive a Python backend. pywebview
+reuses the existing converter and frontend directly in a native window — far
+less moving machinery for the same result.
+
 ## How it works
 
 ```

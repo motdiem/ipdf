@@ -148,13 +148,47 @@
       const dispo = resp.headers.get("Content-Disposition") || "";
       const match = /filename="?([^"]+)"?/.exec(dispo);
       const outName = match ? match[1] : file.name.replace(/\.[^.]+$/, "") + ".pdf";
-      triggerDownload(blob, outName);
-      setStatus("Done — downloaded " + outName, "ok");
+
+      if (isDesktop()) {
+        // Native macOS app: hand the bytes to Python for a "Save as…" dialog.
+        const res = await saveViaDesktop(blob, outName);
+        if (res && res.saved) {
+          setStatus("Saved " + (res.path || outName), "ok");
+        } else {
+          setStatus("Save cancelled.", null);
+        }
+      } else {
+        triggerDownload(blob, outName);
+        setStatus("Done — downloaded " + outName, "ok");
+      }
     } catch (err) {
       setStatus(err.message || "Something went wrong.", "err");
     } finally {
       resetDropzone();
     }
+  }
+
+  // True when running inside the pywebview-based macOS desktop app.
+  function isDesktop() {
+    return !!(window.pywebview && window.pywebview.api && window.pywebview.api.save_pdf);
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // result is "data:...;base64,XXXX" — keep only the payload.
+        const comma = reader.result.indexOf(",");
+        resolve(reader.result.slice(comma + 1));
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function saveViaDesktop(blob, name) {
+    const b64 = await blobToBase64(blob);
+    return window.pywebview.api.save_pdf(name, b64);
   }
 
   function triggerDownload(blob, name) {
