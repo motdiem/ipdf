@@ -252,11 +252,16 @@ sequenceDiagram
     Note over Flask: TemporaryDirectory is deleted on context exit
 ```
 
-- **`/`** renders `index.html`, embedding `_choices()` as `window.IPDF_CHOICES`.
+- **`/`** renders `index.html`, embedding `_choices()` in an inert
+  `<script type="application/json">` block.
 - **`/api/options`** serves the same metadata as JSON (handy for testing/automation).
-- **`/convert`** is the workhorse. Validation order matters: presence → filename
-  → extension allow-list → option parsing → render. Errors become JSON via the
-  `400`/`413` handlers so the client can show a useful message.
+- **`/convert`** is the workhorse. It accepts **two input modes**: a `file`
+  upload, or a `text` form field with pasted Markdown (a `file` wins if both are
+  present; pasted text is written to a temp `pasted.md` and always treated as
+  Markdown — its download name is derived from the document's first heading).
+  Validation order matters: source present → filename/extension allow-list (file
+  mode) → option parsing → render. Errors become JSON via the `400`/`413`/`503`
+  handlers so the client can show a useful message.
 - Client-side checks (size/extension) are **UX only**; the server re-validates
   everything. Never rely on the browser checks.
 

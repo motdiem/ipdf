@@ -81,6 +81,70 @@ main {
 
 #convert-form { width: min(680px, 100%); }
 
+/* ----------------------------- mode toggle ------------------------------ */
+.mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.mode-btn {
+  appearance: none;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 9px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mode-btn:hover { color: var(--fg); }
+.mode-btn.active { background: var(--bg-elev-2); color: var(--fg); }
+
+/* ------------------------------- paste view ----------------------------- */
+.paste-area {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  font-family: "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+.paste-area:focus { outline: none; border-color: var(--accent); }
+.paste-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 12px;
+}
+.paste-hint { color: var(--muted); font-size: 13px; margin-right: auto; }
+.primary-btn {
+  appearance: none;
+  background: var(--accent-strong);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+}
+.primary-btn:hover { background: var(--accent); }
+.primary-btn:active { transform: scale(0.98); }
+.primary-btn:disabled { opacity: 0.5; cursor: default; }
+
 .dropzone {
   display: block;
   border: 2px dashed var(--border);

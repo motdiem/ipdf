@@ -69,6 +69,27 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_convert_pasted_text_returns_pdf(self):
+        resp = self._post({"text": "# Pasted Title\n\nSome **bold** text.\n"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/pdf")
+        self.assertTrue(resp.data.startswith(b"%PDF-"))
+        # Download name is derived from the document's first heading.
+        self.assertIn("Pasted_Title.pdf", resp.headers.get("Content-Disposition", ""))
+
+    def test_convert_empty_text_rejected(self):
+        resp = self._post({"text": "   \n  "})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_convert_requires_file_or_text(self):
+        resp = self._post({"theme": "light"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_pasted_text_options_applied(self):
+        resp = self._post({"text": "# Hi\n", "theme": "dark", "preset": "iphone-max"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data.startswith(b"%PDF-"))
+
 
 if __name__ == "__main__":
     unittest.main()

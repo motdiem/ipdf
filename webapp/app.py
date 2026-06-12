@@ -180,20 +180,26 @@ def _build_options(form) -> RenderOptions:
 
 @app.post("/convert")
 def convert():
-    if "file" not in request.files:
-        abort(400, "No file was uploaded.")
-    upload = request.files["file"]
-    if not upload.filename:
-        abort(400, "No file was selected.")
+    # Two input modes: an uploaded file, or Markdown pasted into the form's
+    # `text` field. A file takes precedence if both are somehow present.
+    upload = request.files.get("file")
+    pasted = request.form.get("text")
 
-    safe_name = secure_filename(upload.filename) or "document"
-    suffix = Path(safe_name).suffix.lower()
-    if suffix not in ALLOWED_SUFFIXES:
-        abort(
-            400,
-            f"Unsupported file type {suffix or '(none)'!r}. "
-            f"Upload a Markdown or .docx file.",
-        )
+    if upload is not None and upload.filename:
+        mode = "file"
+        safe_name = secure_filename(upload.filename) or "document"
+        suffix = Path(safe_name).suffix.lower()
+        if suffix not in ALLOWED_SUFFIXES:
+            abort(
+                400,
+                f"Unsupported file type {suffix or '(none)'!r}. "
+                f"Upload a Markdown or .docx file.",
+            )
+    elif pasted is not None and pasted.strip():
+        mode = "text"
+        safe_name = "pasted.md"  # pasted content is always treated as Markdown
+    else:
+        abort(400, "Provide a file to upload or some Markdown text to convert.")
 
     options = _build_options(request.form)
 
@@ -205,7 +211,10 @@ def convert():
         # and resolve any relative assets against its directory.
         with tempfile.TemporaryDirectory() as tmpdir:
             src = Path(tmpdir) / safe_name
-            upload.save(src)
+            if mode == "file":
+                upload.save(src)
+            else:
+                src.write_text(pasted, encoding="utf-8")
             try:
                 result = render(src, options=options)
             except ConversionError as exc:
@@ -213,7 +222,14 @@ def convert():
     finally:
         _render_slots.release()
 
-    download_name = Path(safe_name).with_suffix(".pdf").name
+    if mode == "file":
+        download_name = Path(safe_name).with_suffix(".pdf").name
+    else:
+        # No filename for pasted text — name the download after the document's
+        # title (first heading) when there is one.
+        base = secure_filename(result.title or "") or "document"
+        download_name = f"{base}.pdf"
+
     return send_file(
         io.BytesIO(result.pdf_bytes),
         mimetype="application/pdf",

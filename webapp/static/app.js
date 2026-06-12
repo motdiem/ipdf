@@ -25,6 +25,14 @@
   const panel = $("#settings-panel");
   const overlay = $("#overlay");
 
+  const viewUpload = $("#view-upload");
+  const viewPaste = $("#view-paste");
+  const modeUploadBtn = $("#mode-upload");
+  const modePasteBtn = $("#mode-paste");
+  const pasteInput = $("#paste-input");
+  const pasteConvertBtn = $("#paste-convert");
+  const pasteHint = $("#paste-hint");
+
   const els = {
     preset: $("#opt-preset"),
     theme: $("#opt-theme"),
@@ -126,24 +134,14 @@
     return ACCEPT.some((ext) => lower.endsWith(ext));
   }
 
-  async function convertFile(file) {
-    if (!file) return;
-    if (CHOICES.max_bytes && file.size > CHOICES.max_bytes) {
-      setStatus("That file is too large (limit " +
-        Math.round(CHOICES.max_bytes / (1024 * 1024)) + " MB).", "err");
-      return;
-    }
-    if (!hasAllowedExt(file.name)) {
-      setStatus("Unsupported file. Please choose a Markdown or .docx file.", "err");
-      return;
-    }
-
-    const form = new FormData();
-    form.append("file", file);
+  // Shared submit path for both input modes. `hooks.busy` / `hooks.reset` let
+  // each mode show its own progress UI; `fallbackBase` names the download when
+  // the server doesn't supply a Content-Disposition filename.
+  async function submitConversion(form, fallbackBase, hooks) {
     const opts = currentOptions();
     Object.keys(opts).forEach((k) => form.append(k, opts[k]));
 
-    setBusy(file.name);
+    hooks.busy();
     statusEl.hidden = true;
 
     try {
@@ -159,7 +157,7 @@
       const blob = await resp.blob();
       const dispo = resp.headers.get("Content-Disposition") || "";
       const match = /filename="?([^"]+)"?/.exec(dispo);
-      const outName = match ? match[1] : file.name.replace(/\.[^.]+$/, "") + ".pdf";
+      const outName = match ? match[1] : fallbackBase + ".pdf";
 
       if (isDesktop()) {
         // Native macOS app: hand the bytes to Python for a "Save as…" dialog.
@@ -176,8 +174,46 @@
     } catch (err) {
       setStatus(err.message || "Something went wrong.", "err");
     } finally {
-      resetDropzone();
+      hooks.reset();
     }
+  }
+
+  async function convertFile(file) {
+    if (!file) return;
+    if (CHOICES.max_bytes && file.size > CHOICES.max_bytes) {
+      setStatus("That file is too large (limit " +
+        Math.round(CHOICES.max_bytes / (1024 * 1024)) + " MB).", "err");
+      return;
+    }
+    if (!hasAllowedExt(file.name)) {
+      setStatus("Unsupported file. Please choose a Markdown or .docx file.", "err");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("file", file);
+    await submitConversion(form, file.name.replace(/\.[^.]+$/, ""), {
+      busy: () => setBusy(file.name),
+      reset: resetDropzone,
+    });
+  }
+
+  async function convertText(text) {
+    if (!text || !text.trim()) {
+      setStatus("Nothing to convert — paste some Markdown first.", "err");
+      return;
+    }
+    if (CHOICES.max_bytes && text.length > CHOICES.max_bytes) {
+      setStatus("That's too much text to convert at once.", "err");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("text", text);
+    await submitConversion(form, "document", {
+      busy: () => setPasteBusy(true),
+      reset: () => setPasteBusy(false),
+    });
   }
 
   // True when running inside the pywebview-based macOS desktop app.
@@ -212,6 +248,28 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  // -------------------------------------------------------------- paste mode
+  function setPasteBusy(busy) {
+    pasteConvertBtn.disabled = busy;
+    pasteConvertBtn.textContent = busy ? "Converting…" : "Convert to PDF";
+  }
+
+  function updatePasteHint() {
+    const n = pasteInput.value.length;
+    pasteHint.textContent = n ? n.toLocaleString() + " characters" : "";
+  }
+
+  function setMode(mode) {
+    const paste = mode === "paste";
+    viewPaste.hidden = !paste;
+    viewUpload.hidden = paste;
+    modePasteBtn.classList.toggle("active", paste);
+    modeUploadBtn.classList.toggle("active", !paste);
+    modePasteBtn.setAttribute("aria-selected", String(paste));
+    modeUploadBtn.setAttribute("aria-selected", String(!paste));
+    if (paste) pasteInput.focus();
   }
 
   // ----------------------------------------------------------------- events
@@ -254,4 +312,17 @@
       if (!dropzone.contains(e.target)) e.preventDefault();
     })
   );
+
+  // Mode toggle + paste actions.
+  modeUploadBtn.addEventListener("click", () => setMode("upload"));
+  modePasteBtn.addEventListener("click", () => setMode("paste"));
+  pasteInput.addEventListener("input", updatePasteHint);
+  pasteConvertBtn.addEventListener("click", () => convertText(pasteInput.value));
+  // Cmd/Ctrl+Enter converts from the textarea.
+  pasteInput.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      convertText(pasteInput.value);
+    }
+  });
 })();
