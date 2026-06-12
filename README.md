@@ -102,10 +102,11 @@ detected title if you'd rather not write to disk.
 
 ## Web frontend
 
-There's also a tiny drag-and-drop web app: drop a Markdown or `.docx` file onto
-the page and the converted PDF downloads automatically. All the conversion
-options live behind a ⚙️ settings panel (iPhone model, theme, font, font size,
-margin, line height, hyphenation, title).
+There's also a tiny web app: **drop a Markdown or `.docx` file** onto the page —
+or switch to **Paste Markdown** and type/paste content directly (⌘/Ctrl+Enter to
+convert) — and the PDF downloads automatically. All the conversion options live
+behind a ⚙️ settings panel (iPhone model, theme, font, font size, margin, line
+height, hyphenation, title).
 
 ```bash
 pip install ".[web]"        # or: pip install -r webapp/requirements.txt
